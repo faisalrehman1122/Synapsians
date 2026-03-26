@@ -21,23 +21,27 @@ def get_status():
 
 @app.post("/evaluate")
 async def evaluate_exam(file: UploadFile = File(...)):
-    progress.current_status["message"] = "Uploading File & Initializing..."
+    # Reset all state for this new run
+    progress.reset()
+    progress.current_status["message"]  = "Uploading & initialising…"
     progress.current_status["progress"] = 5
-    
+    progress.current_status["phase"]    = "uploading"
+
     if not file.filename.endswith(".docx"):
         return {"error": "Invalid file format. Only .docx files are supported."}
-        
+
     file_bytes = await file.read()
-    
-    # Process document
-    progress.current_status["message"] = "Analyzing document structure..."
+
+    progress.current_status["message"]  = "Analysing document structure…"
     progress.current_status["progress"] = 10
+    progress.current_status["phase"]    = "parsing"
+
     modified_docx_bytes = await process_exam_document(file_bytes)
-    
-    progress.current_status["message"] = "Process Complete!"
+
+    progress.current_status["message"]  = "Complete!"
     progress.current_status["progress"] = 100
-    
-    # Return as downloadable file
+    progress.current_status["phase"]    = "complete"
+
     return Response(
         content=modified_docx_bytes,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",

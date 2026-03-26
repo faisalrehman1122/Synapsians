@@ -3,58 +3,84 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Exam Evaluator</title>
+    <title>Exam Evaluator · UKW</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;500;700&display=swap" rel="stylesheet">
+    <!-- Three.js r160 -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Exam Evaluator</h1>
-            <p>Upload your university exam document for instant automated feedback on formatting and content quality.</p>
-        </header>
 
-        <main>
-            <div class="upload-area" id="drop-zone">
-                <div class="icon-container">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                        <polyline points="14 2 14 8 20 8"></polyline>
-                        <line x1="12" y1="18" x2="12" y2="12"></line>
-                        <line x1="9" y1="15" x2="15" y2="15"></line>
-                    </svg>
-                </div>
-                <h3>Drag & Drop or <span class="highlight">Browse</span></h3>
-                <p>Supports .docx files</p>
-                <input type="file" id="file-input" accept=".docx" hidden>
+    <!-- Three.js lives here, behind everything -->
+    <canvas id="bg" aria-hidden="true"></canvas>
+
+    <!-- ① UPLOAD SCREEN -->
+    <div id="screen-upload" class="screen active">
+
+        <div class="logo-wrap">
+            <img src="icon.svg" alt="Uniklinikum Würzburg" class="ukw-logo">
+        </div>
+
+        <div id="drop-zone" class="drop-zone" role="button" tabindex="0"
+             aria-label="Upload .docx exam document">
+
+            <!-- Spinning conic-gradient border -->
+            <div class="dz-spin-border" aria-hidden="true"></div>
+
+            <svg class="dz-icon" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+
+            <p class="dz-label">Drop your <strong>.docx</strong> here</p>
+            <input type="file" id="file-input" accept=".docx" hidden>
+        </div>
+
+        <button id="evaluate-btn" class="run-btn" disabled>Analyse →</button>
+
+    </div>
+
+    <!-- ② ANALYSIS SCREEN -->
+    <div id="screen-analysis" class="screen">
+
+        <img src="icon.svg" alt="" class="analysis-logo" aria-hidden="true">
+
+        <div class="scanner">
+
+            <!-- phase label at top -->
+            <div class="scan-phase" id="scan-phase">Initialising…</div>
+
+            <!-- question rows filled by JS; beam lives here so it never hits footer -->
+            <div id="q-rows" class="q-rows" aria-live="polite">
+                <div class="scan-beam" aria-hidden="true"></div>
             </div>
 
-            <div class="file-info" id="file-info" style="display: none;">
-                <span id="file-name">filename.docx</span>
-                <button id="remove-file" class="btn-icon">&times;</button>
+            <!-- footer progress -->
+            <div class="scan-foot">
+                <span id="scan-msg">—</span>
+                <span id="scan-pct">0%</span>
             </div>
+        </div>
 
-            <button id="evaluate-btn" class="btn-primary" disabled>Get Feedback</button>
+    </div>
 
-            <div class="progress-container" id="progress-container" style="display: none;">
-                <div class="progress-bar">
-                    <div class="progress-fill"></div>
-                </div>
-                <p id="progress-status">Analyzing document structure...</p>
-            </div>
-
-            <div class="result-container" id="result-container" style="display: none;">
-                <div class="success-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                    </svg>
-                </div>
-                <h3>Evaluation Complete!</h3>
-                <p>Your document has been processed with formatting and quality feedback.</p>
-                <button id="download-btn" class="btn-secondary">Download Annotated Word File</button>
-            </div>
-        </main>
+    <!-- ③ DONE SCREEN -->
+    <div id="screen-done" class="screen">
+        <div class="done-card">
+            <svg class="done-ring-svg" viewBox="0 0 72 72" fill="none" aria-hidden="true">
+                <circle class="done-track" cx="36" cy="36" r="30" stroke-width="2"/>
+                <circle class="done-arc"   cx="36" cy="36" r="30" stroke-width="2"
+                        stroke-linecap="round"/>
+                <polyline class="done-tick" points="22,37 31,46 50,26"
+                          stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <p class="done-word">Done.</p>
+            <button id="download-btn" class="dl-btn">Download annotated file</button>
+            <button id="restart-btn" class="restart-link">Analyse another →</button>
+        </div>
     </div>
 
     <script src="app.js"></script>

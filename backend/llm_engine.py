@@ -16,59 +16,61 @@ client = AzureOpenAI(
 )
 
 def build_system_prompt(question_type):
-    # 1. BASE PROMPT (Strict Role Definition)
     base_prompt = """
-    You are a STRICT structural and didactic reviewer for medical multiple-choice exams. 
-    
-    CRITICAL CONSTRAINTS:
-    1. DO NOT FACT-CHECK MEDICAL CONTENT. Assume all medical facts, numbers, and statements are medically correct. Your ONLY job is to check the format, structure, and didactic rules (cues).
-    2. Write short, punchy, professional comments in German. Do NOT sound like an AI. Do not use phrases like "Es ist zu beachten, dass..." or "Gemäß den Regeln...". Just state the error directly.
-    3. The correct answer(s) are enclosed in bold markdown (e.g., **B. Macrophages**). Unbolded options are distractors.
-    
-    UNIVERSAL DIDACTIC RULES (CUES) TO CHECK:
-    - Absolute Words: "immer", "nie", "alle", "ausschließlich", "stets", "kein" are strictly forbidden.
-    - Vague Words: "häufig", "gewöhnlich", "oft", "in der Regel" are forbidden.
-    - Length Cue: Flag if the correct answer is noticeably longer/shorter or much more detailed than the distractors.
-    - Word-Stem Cue: Flag if a prominent word from the question stem is repeated ONLY in the correct answer.
-    - Grammar: Double negations are forbidden.
-    - Opposites: If two distractors are exact logical opposites, flag it.
+    You are a STRICT, algorithmic reviewer for medical multiple-choice exams.
+    You MUST follow these rules exactly. DO NOT hallucinate rules or false positives.
+
+    1. ABSOLUTE WORDS (STRICT WHITELIST):
+    You may ONLY flag these EXACT 6 words: "immer", "nie", "alle", "ausschließlich", "stets", "kein".
+    DO NOT flag verbs (e.g., "werden", "führt"). DO NOT flag adjectives (e.g., "reversibel", "identisch"). DO NOT flag nouns. 
+    If a word is NOT in the 6-word list above, IT IS NOT AN ABSOLUTE WORD. DO NOT FLAG IT.
+
+    2. DOUBLE NEGATIONS:
+    Only flag true grammatical double negations (e.g., "keine unauffälligen"). A simple "nicht" is perfectly fine and must not be flagged.
+
+    3. LENGTH CUE:
+    Flag only if one option is massively longer (e.g., 3 lines vs 1 line) than the rest.
+
+    4. WORD-STEM CUE:
+    Flag only if a highly specific noun from the question stem appears in ONLY ONE answer option.
+
+    5. NO FACT CHECKING:
+    Assume all medical facts are correct.
     """
 
-    # 2. DYNAMIC RULES (Enforcing the Math)
     dynamic_rules = ""
     if question_type == "PickS":
         dynamic_rules = """
-        SPECIFIC RULES (Type: PickS):
-        YOU MUST COUNT THE OPTIONS. This is your highest priority:
-        1. The question stem MUST explicitly state the EXACT number of correct answers (e.g., "3 Antworten treffen zu"). Flag if missing.
-        2. Count the correct (bold) answers. Count the TOTAL answer options. There MUST be at least TWICE as many total options as correct answers (e.g., 3 correct means MINIMUM 6 total options). Maximum is 8 options. If this math fails, flag it immediately!
+        6. MATH RULE FOR PickS (CRITICAL):
+        - PickS ALLOWS 5, 6, 7, or 8 options. NEVER say "PickS needs 4 options". 
+        - The question stem MUST explicitly state the number of correct answers (e.g., "Welche 3 Aussagen...").
+        - The total number of options MUST be at least TWICE the number asked for (e.g., if asking for 3, there MUST be at least 6 options). If it fails this math, flag it!
         """
     elif question_type == "Kprim":
         dynamic_rules = """
-        SPECIFIC RULES (Type: Kprim):
-        YOU MUST COUNT THE OPTIONS. This is your highest priority:
-        1. There MUST be EXACTLY 4 answer options (A, B, C, D). If there are 5 or 3, you MUST flag it!
-        2. The question stem must be neutral. No singular/plural hints (e.g., do not ask "Welche Diagnose...").
+        6. MATH RULE FOR Kprim (CRITICAL):
+        - Kprim MUST have EXACTLY 4 options. If it has 5 or 3, flag it with: "Bitte genau 4 Antwortoptionen bei Kprim."
         """
-    elif question_type == "TypA" or question_type == "TypA_neg":
+    else:
         dynamic_rules = """
-        SPECIFIC RULES (Type: TypA):
-        - Usually has 3 to 5 options. 
-        - Combinations (e.g., "A and C are correct") are absolutely forbidden.
-        - If negative (TypA_neg), the negation (e.g., "nicht", "außer") must be visually emphasized.
+        6. MATH RULE FOR TypA:
+        - TypA usually has 4 or 5 options. Do not flag the number of options.
         """
 
-    # 3. JSON ENFORCEMENT & GRANULARITY
     json_instruction = """
-    OUTPUT FORMAT: Return a valid JSON object ONLY. Do not modify the original text.
+    OUTPUT FORMAT: Return a valid JSON object ONLY.
     {
+      "_scratchpad": {
+        "step_1_question_type": "Kprim, PickS or TypA",
+        "step_2_number_of_options_counted": 5,
+        "step_3_check_absolute_words": "Did I only flag from the 6 allowed words?"
+      },
       "feedback_comments": [
         {
-          "exact_quote": "Extract the exact word, short phrase, or full sentence that contains the error. It MUST be an exact string match from the provided text.",
-          "comment": "Short, direct, professional explanation of the structural/didactic error in German. Max 1-2 sentences. NO medical fact-checking."
+          "exact_quote": "Exact text from the document",
+          "comment": "Short, professional explanation in German. e.g., 'Das absolute Wort (immer) ist nicht erlaubt.' or 'Bei 3 richtigen Antworten werden mindestens 6 Optionen benötigt.'"
         }
-      ],
-      "general_feedback": "Short general feedback on the structure in German."
+      ]
     }
     """
     return f"{base_prompt}\n{dynamic_rules}\n{json_instruction}"
@@ -85,6 +87,7 @@ def process_single_question(question_data):
         response = client.chat.completions.create(
             model=DEPLOYMENT,
             response_format={ "type": "json_object" },
+            temperature=0.1,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": question_data["markdown"]}
@@ -100,24 +103,58 @@ def process_single_question(question_data):
 def process_exam_in_parallel(exam_questions):
     """
     Takes a list of question dictionaries and processes them concurrently.
+    Populates progress.current_status with per-question status for frontend viz.
     """
     import progress
+    import threading
+
     final_results = []
     total = len(exam_questions)
     completed = 0
-    
-    # max_workers=10 means 10 API calls run at the exact same time
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        # Map the function to all questions
-        future_to_question = {executor.submit(process_single_question, q): q for q in exam_questions}
-        
-        for future in concurrent.futures.as_completed(future_to_question):
-            result = future.result()
-            final_results.append(result)
+    lock = threading.Lock()
+
+    # Initialise question list in progress store
+    progress.current_status["questions_total"] = total
+    progress.current_status["questions_done"]  = 0
+    progress.current_status["questions"] = [
+        {"id": q["id"], "type": q["type"], "status": "pending"}
+        for q in exam_questions
+    ]
+
+    def find_q_index(qid):
+        for i, q in enumerate(progress.current_status["questions"]):
+            if q["id"] == qid:
+                return i
+        return -1
+
+    def run_with_tracking(question_data):
+        nonlocal completed
+        qid = question_data["id"]
+
+        # Mark as active
+        idx = find_q_index(qid)
+        if idx >= 0:
+            progress.current_status["questions"][idx]["status"] = "active"
+
+        result = process_single_question(question_data)
+
+        with lock:
             completed += 1
-            progress.current_status["message"] = f"Processing exam answers ({completed}/{total})..."
-            progress.current_status["progress"] = 30 + int((completed / max(total, 1)) * 55)
-            
-    # Sort results back to original order based on ID
+            status = "done" if result.get("success") else "error"
+            idx = find_q_index(qid)
+            if idx >= 0:
+                progress.current_status["questions"][idx]["status"] = status
+            progress.current_status["questions_done"]  = completed
+            progress.current_status["message"]         = f"Processing exam answers ({completed}/{total})..."
+            progress.current_status["progress"]        = 30 + int((completed / max(total, 1)) * 55)
+
+        return result
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(run_with_tracking, q): q for q in exam_questions}
+        for future in concurrent.futures.as_completed(futures):
+            final_results.append(future.result())
+
+    # Sort results back to original order
     final_results = sorted(final_results, key=lambda x: x["id"])
     return final_results
