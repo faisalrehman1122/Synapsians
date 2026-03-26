@@ -1,0 +1,222 @@
+:root {
+    --primary: #4F46E5;
+    --primary-hover: #4338CA;
+    --background: #F3F4F6;
+    --surface: #FFFFFF;
+    --text-main: #111827;
+    --text-muted: #6B7280;
+    --border: #E5E7EB;
+    --success: #10B981;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--background);
+    color: var(--text-main);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+.container {
+    background-color: var(--surface);
+    width: 100%;
+    max-width: 600px;
+    border-radius: 16px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+    padding: 40px;
+    text-align: center;
+}
+
+header {
+    margin-bottom: 30px;
+}
+
+header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    color: var(--text-main);
+}
+
+header p {
+    color: var(--text-muted);
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+.upload-area {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 40px 20px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background-color: #FAFAFA;
+}
+
+.upload-area:hover, .upload-area.dragover {
+    border-color: var(--primary);
+    background-color: #F0F5FF;
+}
+
+.icon-container {
+    color: var(--primary);
+    margin-bottom: 15px;
+    transition: transform 0.3s ease;
+}
+
+.upload-area:hover .icon-container {
+    transform: translateY(-5px);
+}
+
+.upload-area h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.highlight {
+    color: var(--primary);
+}
+
+.upload-area p {
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+.file-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #F8FAFC;
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    margin-top: 20px;
+}
+
+.file-info span {
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 90%;
+}
+
+.btn-icon {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 20px;
+    color: var(--text-muted);
+}
+
+.btn-icon:hover {
+    color: #EF4444;
+}
+
+.btn-primary {
+    background-color: var(--primary);
+    color: white;
+    border: none;
+    padding: 14px 24px;
+    width: 100%;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 24px;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background-color: var(--primary-hover);
+}
+
+.btn-primary:active:not(:disabled) {
+    transform: scale(0.98);
+}
+
+.btn-primary:disabled {
+    background-color: #D1D5DB;
+    cursor: not-allowed;
+}
+
+.progress-container {
+    margin-top: 24px;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background-color: var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 10px;
+}
+
+.progress-fill {
+    height: 100%;
+    width: 0%;
+    background-color: var(--primary);
+    transition: width 0.3s ease;
+}
+
+#progress-status {
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+.result-container {
+    margin-top: 30px;
+    padding: 24px;
+    background-color: #F0FDF4;
+    border-radius: 12px;
+    border: 1px solid #BBF7D0;
+    animation: fadeIn 0.5s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.success-icon {
+    color: var(--success);
+    margin-bottom: 12px;
+}
+
+.result-container h3 {
+    color: #166534;
+    margin-bottom: 8px;
+}
+
+.result-container p {
+    color: #15803D;
+    font-size: 14px;
+    margin-bottom: 20px;
+}
+
+.btn-secondary {
+    background-color: white;
+    color: var(--success);
+    border: 1px solid var(--success);
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+    background-color: #F0FDF4;
+    box-shadow: 0 2px 4px rgba(16, 185, 129, 0.1);
+}
