@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Exam Evaluator · UKW</title>
+    <title>Klausur-Evaluator · UKW</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;500;700&display=swap" rel="stylesheet">
     <!-- Three.js r160 -->
@@ -22,7 +22,7 @@
         </div>
 
         <div id="drop-zone" class="drop-zone" role="button" tabindex="0"
-             aria-label="Upload .docx exam document">
+             aria-label=".docx-Klausurdokument hochladen">
 
             <!-- Spinning conic-gradient border -->
             <div class="dz-spin-border" aria-hidden="true"></div>
@@ -35,11 +35,11 @@
                 <line x1="12" y1="3" x2="12" y2="15"/>
             </svg>
 
-            <p class="dz-label">Drop your <strong>.docx</strong> here</p>
+            <p class="dz-label"><strong>.docx</strong>-Datei hier ablegen</p>
             <input type="file" id="file-input" accept=".docx" hidden>
         </div>
 
-        <button id="evaluate-btn" class="run-btn" disabled>Analyse →</button>
+        <button id="evaluate-btn" class="run-btn" disabled>Analyse starten →</button>
 
     </div>
 
@@ -51,7 +51,7 @@
         <div class="scanner">
 
             <!-- phase label at top -->
-            <div class="scan-phase" id="scan-phase">Initialising…</div>
+            <div class="scan-phase" id="scan-phase">Initialisierung…</div>
 
             <!-- question rows filled by JS; beam lives here so it never hits footer -->
             <div id="q-rows" class="q-rows" aria-live="polite">
@@ -77,9 +77,9 @@
                 <polyline class="done-tick" points="22,37 31,46 50,26"
                           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            <p class="done-word">Done.</p>
-            <button id="download-btn" class="dl-btn">Download annotated file</button>
-            <button id="restart-btn" class="restart-link">Analyse another →</button>
+            <p class="done-word">Fertig.</p>
+            <button id="download-btn" class="dl-btn">Annotierte Datei herunterladen</button>
+            <button id="restart-btn" class="restart-link">Weitere Klausur analysieren →</button>
         </div>
     </div>
 

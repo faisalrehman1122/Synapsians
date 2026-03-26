@@ -369,7 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function pick(files) {
         if (!files.length) return;
         const f = files[0];
-        if (!f.name.match(/\.docx?$/i)) { toast('Please upload a .docx file.', 'error'); return; }
+        if (!f.name.match(/\.docx?$/i)) { toast('Bitte eine .docx-Datei hochladen.', 'error'); return; }
         file = f;
         dropZone.classList.add('has-file');
         dropZone.querySelector('.dz-label').innerHTML = `<strong>${f.name}</strong>`;
@@ -379,6 +379,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // ── Question row helpers ───────────────────────────────────
     const qRowMap = {};
     let renderedCount = 0;
+
+    // Always scroll the newest/active row into view smoothly
+    function scrollRowIntoView(row) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
 
     function getOrCreateRow(q) {
         if (qRowMap[q]) return qRowMap[q];
@@ -395,7 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
         qRowMap[q] = row;
         requestAnimationFrame(() => requestAnimationFrame(() => {
             row.classList.add('visible');
-            qRows.scrollTo({ top: qRows.scrollHeight, behavior: 'smooth' });
+            scrollRowIntoView(row);
         }));
         return row;
     }
@@ -410,7 +415,7 @@ document.addEventListener('DOMContentLoaded', () => {
             row.classList.remove('active','done','error');
             if (q.status === 'active') {
                 row.classList.add('active');
-                qRows.scrollTo({ top: qRows.scrollHeight, behavior: 'smooth' });
+                scrollRowIntoView(row);
             } else if (q.status === 'done') {
                 row.classList.add('done');
                 row.querySelector('.q-bar-fill').style.width = '100%';
@@ -423,12 +428,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Phase label copy
     const PHASE_LABELS = {
-        idle:       'Ready',
-        uploading:  'Uploading…',
-        parsing:    'Parsing document…',
-        processing: 'AI reviewing questions',
-        collating:  'Collating feedback…',
-        complete:   'Complete',
+        idle:       'Bereit',
+        uploading:  'Hochladen…',
+        parsing:    'Dokument wird verarbeitet…',
+        processing: 'KI prüft Fragen',
+        collating:  'Feedback wird zusammengestellt…',
+        complete:   'Abgeschlossen',
     };
 
     function applyStatus(data) {
@@ -452,12 +457,13 @@ document.addEventListener('DOMContentLoaded', () => {
     evalBtn.addEventListener('click', async () => {
         if (!file) return;
 
+        // ── Full UI reset ──
         const beam = qRows.querySelector('.scan-beam');
         qRows.innerHTML = '';
         if (beam) qRows.insertBefore(beam, qRows.firstChild);
         Object.keys(qRowMap).forEach(k => delete qRowMap[k]);
         renderedCount = 0;
-        applyStatus({ phase: 'uploading', progress: 0, message: 'Connecting…' });
+        applyStatus({ phase: 'uploading', progress: 0, message: 'Verbindung wird hergestellt…' });
 
         goTo('analysis');
         window._ukwPhase = 'uploading';
@@ -471,12 +477,18 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (_) {}
             if (polling) setTimeout(poll, 300);
         };
-        poll();
 
         try {
+            // Fire the POST first so the backend resets its state,
+            // then start polling after a short delay.
             const fd = new FormData();
             fd.append('file', file);
-            const resp = await fetch('http://127.0.0.1:8000/evaluate', { method: 'POST', body: fd });
+            const evalPromise = fetch('http://127.0.0.1:8000/evaluate', { method: 'POST', body: fd });
+
+            // Give the backend time to receive the request and call progress.reset()
+            setTimeout(() => { if (polling) poll(); }, 400);
+
+            const resp = await evalPromise;
             polling = false;
 
             if (!resp.ok) { const e = await resp.json(); throw new Error(e.error || 'Server error'); }
@@ -486,17 +498,25 @@ document.addEventListener('DOMContentLoaded', () => {
             blobUrl  = URL.createObjectURL(blob);
             evalName = 'eval_' + file.name;
 
-            applyStatus({ phase: 'complete', progress: 100, message: 'Done!' });
+            applyStatus({ phase: 'complete', progress: 100, message: 'Fertig!' });
             window._ukwPhase = 'complete';
 
-            await new Promise(r => setTimeout(r, 900));
+            // Force all remaining rows to "done" so every bar fills to 100%
+            qRows.querySelectorAll('.q-row').forEach(row => {
+                row.classList.remove('active', 'error');
+                row.classList.add('done');
+                row.querySelector('.q-bar-fill').style.width = '100%';
+            });
+
+            // Wait for the CSS bar-fill transition (0.7s) + breathing room
+            await new Promise(r => setTimeout(r, 1400));
             goTo('done');
 
         } catch (err) {
             polling = false;
             window._ukwPhase = 'idle';
             goTo('upload');
-            toast('Error: ' + err.message, 'error');
+            toast('Fehler: ' + err.message, 'error');
         }
     });
 
@@ -512,7 +532,7 @@ document.addEventListener('DOMContentLoaded', () => {
     restartBtn.addEventListener('click', () => {
         file = null; fileInput.value = '';
         dropZone.classList.remove('has-file');
-        dropZone.querySelector('.dz-label').innerHTML = `Drop your <strong>.docx</strong> here`;
+        dropZone.querySelector('.dz-label').innerHTML = `<strong>.docx</strong>-Datei hier ablegen`;
         evalBtn.disabled = true;
         window._ukwPhase = 'idle';
         goTo('upload');

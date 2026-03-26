@@ -286,10 +286,20 @@ body {
     flex: 1;            /* fills remaining card height */
     overflow-y: auto;
     overflow-x: hidden;
-    /* hide native scrollbar */
-    scrollbar-width: none;
+    overscroll-behavior: contain;
+    /* Styled thin scrollbar — industry standard */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(19,67,149,0.18) transparent;
 }
-.q-rows::-webkit-scrollbar { display: none; }
+.q-rows::-webkit-scrollbar { width: 6px; }
+.q-rows::-webkit-scrollbar-track { background: transparent; }
+.q-rows::-webkit-scrollbar-thumb {
+    background: rgba(19,67,149,0.18);
+    border-radius: 99px;
+}
+.q-rows::-webkit-scrollbar-thumb:hover {
+    background: rgba(19,67,149,0.32);
+}
 
 .q-row {
     display: flex;
