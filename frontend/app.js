@@ -229,7 +229,7 @@
     // ════════════════════════════════════════════════════════
     // 4. PHASE-REACTIVE ANIMATION LOOP
     // ════════════════════════════════════════════════════════
-    window._ukwPhase    = 'idle';
+    window._ukwPhase    = 'slides';
     window._ukwProgress = 0;
 
     let time = 0;
@@ -242,6 +242,10 @@
     const greenC = new THREE.Color(0x00964E);
     const midC   = new THREE.Color(0x4a7fd4);
 
+    const camTargetPos = new THREE.Vector3(0, -5, 45);
+    const camTargetLook = new THREE.Vector3(0, 30, -80);
+    const curLookAt = new THREE.Vector3(0, 30, -80);
+
     function animate() {
         requestAnimationFrame(animate);
         const dt = 0.007;
@@ -252,6 +256,8 @@
 
         // Phase targets
         switch (phase) {
+            case 'slides':
+                tGridOp = 0.04; tWvSpeed = 0.18; tWvOp = 0.6; tGridScroll = 2; break;
             case 'uploading': case 'parsing':
                 tGridOp = 0.09; tWvSpeed = 0.44; tWvOp = 1.05; tGridScroll = 6; break;
             case 'processing':
@@ -303,10 +309,18 @@
             tw.mesh.rotation.y = Math.sin(time * curWvSpeed * 0.3 + idx) * 0.03;
         });
 
-        // ── Camera breathing ──
-        camera.position.x = Math.sin(time * 0.10) * 2.5;
-        camera.position.y = 16 + Math.sin(time * 0.17) * 0.6;
-        camera.lookAt(0, 0, -80);
+        // ── Camera breathing & panning ──
+        if (phase === 'slides') {
+            camTargetPos.set(Math.sin(time * 0.05) * 2, -2 + (time * 0.4), 45);
+            camTargetLook.set(0, 25 + time * 0.2, -80);
+        } else {
+            camTargetPos.set(Math.sin(time * 0.10) * 2.5, 16 + Math.sin(time * 0.17) * 0.6, 38);
+            camTargetLook.set(0, 0, -80);
+        }
+
+        camera.position.lerp(camTargetPos, L * 1.5);
+        curLookAt.lerp(camTargetLook, L * 1.5);
+        camera.lookAt(curLookAt);
 
         renderer.render(scene, camera);
     }
@@ -317,6 +331,32 @@
 
 // ── App logic ──────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+
+    const urlParams = new URLSearchParams(window.location.search);
+    window._selectedModel = urlParams.get('model') === 'base' ? 'base' : 'finetuned';
+
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab') {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            e.preventDefault();
+            
+            window._selectedModel = window._selectedModel === 'finetuned' ? 'base' : 'finetuned';
+            
+            const url = new URL(window.location);
+            url.searchParams.set('model', window._selectedModel);
+            window.history.replaceState({}, '', url);
+
+            const indicator = document.getElementById('model-indicator');
+            if (indicator) {
+                indicator.textContent = window._selectedModel === 'finetuned' ? 'Finetuned Model (gpt-4o-exam-linter-v1)' : 'Base Model (gpt-4o)';
+                indicator.classList.add('show');
+                clearTimeout(window._modelIndicatorTimeout);
+                window._modelIndicatorTimeout = setTimeout(() => {
+                    indicator.classList.remove('show');
+                }, 1500);
+            }
+        }
+    });
 
     const dropZone   = document.getElementById('drop-zone');
     const fileInput  = document.getElementById('file-input');
@@ -329,6 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const scanPct    = document.getElementById('scan-pct');
 
     const screens = {
+        slides:   document.getElementById('screen-slides'),
         upload:   document.getElementById('screen-upload'),
         analysis: document.getElementById('screen-analysis'),
         done:     document.getElementById('screen-done'),
@@ -369,7 +410,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function pick(files) {
         if (!files.length) return;
         const f = files[0];
-        if (!f.name.match(/\.docx?$/i)) { toast('Bitte eine .docx-Datei hochladen.', 'error'); return; }
+        if (!f.name.match(/\.docx?$/i)) { toast('Please upload a .docx file.', 'error'); return; }
         file = f;
         dropZone.classList.add('has-file');
         dropZone.querySelector('.dz-label').innerHTML = `<strong>${f.name}</strong>`;
@@ -428,12 +469,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Phase label copy
     const PHASE_LABELS = {
-        idle:       'Bereit',
-        uploading:  'Hochladen…',
-        parsing:    'Dokument wird verarbeitet…',
-        processing: 'KI prüft Fragen',
-        collating:  'Feedback wird zusammengestellt…',
-        complete:   'Abgeschlossen',
+        idle:       'Ready',
+        uploading:  'Uploading...',
+        parsing:    'Processing Document...',
+        processing: 'AI analyzing Questions',
+        collating:  'Collating Feedback...',
+        complete:   'Complete',
     };
 
     function applyStatus(data) {
@@ -463,17 +504,42 @@ document.addEventListener('DOMContentLoaded', () => {
         if (beam) qRows.insertBefore(beam, qRows.firstChild);
         Object.keys(qRowMap).forEach(k => delete qRowMap[k]);
         renderedCount = 0;
-        applyStatus({ phase: 'uploading', progress: 0, message: 'Verbindung wird hergestellt…' });
+        applyStatus({ phase: 'uploading', progress: 0, message: 'Establishing connection...' });
 
         goTo('analysis');
         window._ukwPhase = 'uploading';
 
         let polling = true;
+        const loggedQs = new Set();
         const poll = async () => {
             if (!polling) return;
             try {
                 const d = await (await fetch('http://127.0.0.1:8000/status')).json();
                 applyStatus(d);
+                if (d.debug_log && d.debug_log.length) {
+                    d.debug_log.forEach(entry => {
+                        if (loggedQs.has(entry.q)) return;
+                        loggedQs.add(entry.q);
+                        const label = `Q${entry.q} [${entry.type || '?'}]`;
+                        const preview = entry.preview ? `\n   📄 ${entry.preview}` : '';
+                        if (entry.error) {
+                            const policyMatch = entry.error.match(/content_filter_result.*?'(\w+)':\s*\{'filtered': True,\s*'severity':\s*'(\w+)'/);
+                            const policy = policyMatch ? policyMatch[1] : 'unknown';
+                            const severity = policyMatch ? policyMatch[2] : '?';
+                            console.warn(`⛔ ${label} — blocked by Azure content filter: ${policy} (severity: ${severity})${preview}`);
+                        } else if (entry.comments > 0) {
+                            console.log(`✅ ${label} — ${entry.comments} comment(s):${preview}`);
+                            try {
+                                const raw = JSON.parse(entry.raw_preview);
+                                (raw.feedback_comments || []).forEach(c =>
+                                    console.log(`   💬 "${c.exact_quote}" → ${c.comment}`)
+                                );
+                            } catch(_) {}
+                        } else {
+                            console.log(`✅ ${label} — no issues found`);
+                        }
+                    });
+                }
             } catch (_) {}
             if (polling) setTimeout(poll, 300);
         };
@@ -483,6 +549,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // then start polling after a short delay.
             const fd = new FormData();
             fd.append('file', file);
+            fd.append('model', window._selectedModel);
             const evalPromise = fetch('http://127.0.0.1:8000/evaluate', { method: 'POST', body: fd });
 
             // Give the backend time to receive the request and call progress.reset()
@@ -491,14 +558,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const resp = await evalPromise;
             polling = false;
 
-            if (!resp.ok) { const e = await resp.json(); throw new Error(e.error || 'Server error'); }
+            if (!resp.ok) {
+                let errMsg = 'Server error ' + resp.status;
+                try { const e = await resp.json(); errMsg = e.error || errMsg; } catch(_) {}
+                throw new Error(errMsg);
+            }
 
             const blob = await resp.blob();
             if (blobUrl) URL.revokeObjectURL(blobUrl);
             blobUrl  = URL.createObjectURL(blob);
             evalName = 'eval_' + file.name;
 
-            applyStatus({ phase: 'complete', progress: 100, message: 'Fertig!' });
+            applyStatus({ phase: 'complete', progress: 100, message: 'Done!' });
             window._ukwPhase = 'complete';
 
             // Force all remaining rows to "done" so every bar fills to 100%
@@ -515,8 +586,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             polling = false;
             window._ukwPhase = 'idle';
+            console.error('[Evaluate] Backend error:', err);
             goTo('upload');
-            toast('Fehler: ' + err.message, 'error');
+            toast('Error: ' + err.message, 'error');
         }
     });
 
@@ -532,7 +604,7 @@ document.addEventListener('DOMContentLoaded', () => {
     restartBtn.addEventListener('click', () => {
         file = null; fileInput.value = '';
         dropZone.classList.remove('has-file');
-        dropZone.querySelector('.dz-label').innerHTML = `<strong>.docx</strong>-Datei hier ablegen`;
+        dropZone.querySelector('.dz-label').innerHTML = `Drop <strong>.docx</strong> file here`;
         evalBtn.disabled = true;
         window._ukwPhase = 'idle';
         goTo('upload');
@@ -553,6 +625,52 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 3500);
     }
 
+    // ── Slide Navigation ───────────────────────────────────────
+    let slideIndex = 0;
+    const NUM_SLIDES = 2; // indices 0, 1, 2
+    const slideEls = document.querySelectorAll('.slide');
+
+    function updateSlides() {
+        if (slideIndex > NUM_SLIDES) {
+            window._ukwPhase = 'idle';
+            goTo('upload');
+        } else {
+            slideEls.forEach((sl, i) => {
+                if (i === slideIndex) sl.classList.add('slide-active');
+                else sl.classList.remove('slide-active');
+            });
+        }
+    }
+
+    function handleSlideKey(e) {
+        if (window._ukwPhase !== 'slides' && window._ukwPhase !== 'idle') return;
+        if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+        
+        if (window._ukwPhase === 'slides') {
+            if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter') {
+                e.preventDefault();
+                slideIndex++;
+                updateSlides();
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                slideIndex = Math.max(0, slideIndex - 1);
+                updateSlides();
+            }
+        } else if (window._ukwPhase === 'idle' && e.key === 'ArrowLeft') {
+            e.preventDefault();
+            slideIndex = NUM_SLIDES;
+            window._ukwPhase = 'slides';
+            goTo('slides'); 
+            updateSlides();
+        }
+    }
+
+    document.addEventListener('keydown', handleSlideKey);
+
     // ── Boot ───────────────────────────────────────────────────
-    goTo('upload');
+    if (window._ukwPhase === 'slides') {
+        goTo('slides');
+    } else {
+        goTo('upload');
+    }
 });

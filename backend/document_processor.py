@@ -3,6 +3,66 @@ import markdownify
 from docx import Document
 from rules_engine import check_formatting_rules
 import progress
+import re
+
+
+def extract_questions_and_map_paragraphs(doc):
+    """
+    Builds LLM question chunks AND the exact paragraph mapping in a single pass.
+    This guarantees that the question ID the LLM evaluates is physically bound
+    to the same paragraphs used for comment insertion — no index shift possible.
+    """
+    exam_questions = []
+    paragraphs_by_qidx = {}
+
+    current_qidx = 0
+    current_chunk_text = ""
+    current_paras = []
+
+    for para in doc.paragraphs:
+        if "--" in para.text:
+            # Save the current chunk if it contains a real question
+            if current_chunk_text.strip() and ("Typ:" in current_chunk_text or "Modus:" in current_chunk_text):
+                match = re.search(r'(Typ|Modus):\s*(PickS|Kprim|TypA)', current_chunk_text, re.IGNORECASE)
+                q_type = match.group(2) if match else "TypA"
+
+                exam_questions.append({
+                    "id": current_qidx,
+                    "type": q_type,
+                    "markdown": current_chunk_text.strip()
+                })
+                paragraphs_by_qidx[current_qidx] = current_paras
+                current_qidx += 1
+
+            # Reset for the next question
+            current_chunk_text = ""
+            current_paras = []
+        else:
+            # Extract text with bold markdown tags
+            para_md = ""
+            for run in para.runs:
+                text = run.text
+                if run.bold and text.strip():
+                    para_md += f"**{text}**"
+                else:
+                    para_md += text
+
+            current_chunk_text += para_md + "\n"
+            current_paras.append(para)
+
+    # Save the last chunk if the document doesn't end with "--"
+    if current_chunk_text.strip() and ("Typ:" in current_chunk_text or "Modus:" in current_chunk_text):
+        match = re.search(r'(Typ|Modus):\s*(PickS|Kprim|TypA)', current_chunk_text, re.IGNORECASE)
+        q_type = match.group(2) if match else "TypA"
+        exam_questions.append({
+            "id": current_qidx,
+            "type": q_type,
+            "markdown": current_chunk_text.strip()
+        })
+        paragraphs_by_qidx[current_qidx] = current_paras
+
+    return exam_questions, paragraphs_by_qidx
+
 
 async def process_exam_document(file_bytes: bytes, model_version: str = "base") -> bytes:
     doc = Document(io.BytesIO(file_bytes))
@@ -21,24 +81,14 @@ async def process_exam_document(file_bytes: bytes, model_version: str = "base") 
     if exam_type == "Unknown" and doc.paragraphs:
         exam_type = doc.paragraphs[0].text.strip()
     
-    # 2. Extract content with inline markdown and split by "--"
+    # 2. Extract questions AND map paragraphs in a single pass (prevents index-shift bugs)
     progress.current_status["message"] = "Splitting document into markdown questions..."
     progress.current_status["progress"] = 15
     progress.current_status["phase"]    = "parsing"
     
-    full_text_md = ""
-    for para in doc.paragraphs:
-        para_md = ""
-        for run in para.runs:
-            if run.bold and run.text.strip():
-                para_md += f"**{run.text}**"
-            else:
-                para_md += run.text
-        full_text_md += para_md + "\n"
-        
-    questions = full_text_md.split("--")
-    
     import asyncio
+    
+    exam_questions, paragraphs_by_qidx = extract_questions_and_map_paragraphs(doc)
     
     # 3. Rule-based format check
     progress.current_status["message"] = "Running Python Rule-Based Formatting Engine..."
@@ -49,30 +99,6 @@ async def process_exam_document(file_bytes: bytes, model_version: str = "base") 
     # 4. LLM Approach for questions using parallel execution
     from llm_engine import process_exam_in_parallel
     
-    import re
-    exam_questions = []
-    for idx, q in enumerate(questions):
-        q_text = q.strip()
-        if not q_text:
-            continue
-        
-        # HARD FILTER: Skip metadata chunks with no question content
-        if not re.search(r'(Typ:|Modus:)', q_text, re.IGNORECASE):
-            continue
-        
-        # REGEX EXTRACTION: Dynamically extract the question type from this chunk
-        type_match = re.search(r'Typ:\s*(\S+)', q_text, re.IGNORECASE)
-        if not type_match:
-            type_match = re.search(r'Modus:\s*(\S+)', q_text, re.IGNORECASE)
-        
-        detected_type = type_match.group(1).strip() if type_match else exam_type
-        
-        exam_questions.append({
-            "id": idx,
-            "type": detected_type,
-            "markdown": q_text
-        })
-            
     # Run the synchronous parallel processor in a separate thread so we don't block FastAPI
     total_q = len(exam_questions)
     progress.current_status["message"] = f"Sending {total_q} questions to AI..."
@@ -107,19 +133,6 @@ async def process_exam_document(file_bytes: bytes, model_version: str = "base") 
     progress.current_status["message"] = f"Writing {len(all_feedback)} comments into document..."
     progress.current_status["progress"] = 90
     progress.current_status["phase"]    = "collating"
-    
-    # Pre-calculate paragraph chunks per question index to scope searches
-    paragraphs_by_qidx = {}
-    current_qidx = 0
-    current_chunk = []
-    for para in doc.paragraphs:
-        if "--" in para.text:
-            paragraphs_by_qidx[current_qidx] = current_chunk
-            current_qidx += para.text.count("--")
-            current_chunk = []
-        else:
-            current_chunk.append(para)
-    paragraphs_by_qidx[current_qidx] = current_chunk
 
     seen_paras = set()
     

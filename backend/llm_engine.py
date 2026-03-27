@@ -3,11 +3,21 @@ import concurrent.futures
 from openai import AzureOpenAI
 import logging
 import os
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 ENDPOINT = "https://smartexamapp.openai.azure.com/"
 API_KEY = os.environ.get("AZURE_OPENAI_API_KEY", "")
-API_VERSION = "2024-12-01-preview"
-DEPLOYMENT = "gpt-4o"
+API_VERSION = "2025-01-01-preview"
+DEPLOYMENT = "gpt-4o-2024-08-06-exam-linter-v1"
+
+def set_model_choice(model_name: str):
+    global DEPLOYMENT
+    if model_name == "base":
+        DEPLOYMENT = "gpt-4o"
+    else:
+        DEPLOYMENT = "gpt-4o-2024-08-06-exam-linter-v1"
 
 FT_API_VERSION = "2025-01-01-preview"
 FT_DEPLOYMENT = "gpt-4o-2024-08-06-exam-linter-v1"
@@ -35,58 +45,52 @@ client_ft2 = AzureOpenAI(
 
 def build_system_prompt(question_type):
     base_prompt = """
-    You are a STRICT, algorithmic reviewer for medical multiple-choice exams.
-    You MUST follow these rules exactly. DO NOT hallucinate rules or false positives.
+    You are an elite, strictly algorithmic structural checker for medical exams. 
+    You MUST NOT evaluate grammar, medical facts, or semantics. 
+    DO NOT check for "Length Cues" (do not flag options for being too long or short).
 
-    1. ABSOLUTE WORDS (STRICT WHITELIST):
-    You may ONLY flag these EXACT 6 words: "immer", "nie", "alle", "ausschließlich", "stets", "kein".
-    DO NOT flag verbs (e.g., "werden", "führt"). DO NOT flag adjectives (e.g., "reversibel", "identisch"). DO NOT flag nouns. 
-    If a word is NOT in the 6-word list above, IT IS NOT AN ABSOLUTE WORD. DO NOT FLAG IT.
-
-    2. DOUBLE NEGATIONS:
-    Only flag true grammatical double negations (e.g., "keine unauffälligen"). A simple "nicht" is perfectly fine and must not be flagged.
-
-    3. LENGTH CUE:
-    Flag only if one option is massively longer (e.g., 3 lines vs 1 line) than the rest.
-
-    4. WORD-STEM CUE:
-    Flag only if a highly specific noun from the question stem appears in ONLY ONE answer option.
-
-    5. NO FACT CHECKING:
-    Assume all medical facts are correct.
+    RULE 1: ABSOLUTE WORDS (STRICT 6-WORD WHITELIST)
+    - You may ONLY flag these exact words (and their declensions like "allen", "keinen"): "immer", "nie", "alle", "ausschließlich", "stets", "kein".
+    - WHOLE WORD MATCH ONLY: DO NOT flag "allein", "alleine", "ausschließen", or "ausgeschlossen".
+    - EXCEPTION: If the exact absolute word appears in EVERY SINGLE answer option of a question, it is NOT a cue. DO NOT flag it.
+    - SILENT REJECTION (CRITICAL): If you find a word that sounds absolute (like "sämtliche", "grundsätzlich", "zwingend", "leicht") but is NOT on the 6-word list, IGNORE IT COMPLETELY. DO NOT generate a comment saying you ignored it. ONLY output actual errors in the final JSON array.
     """
 
     dynamic_rules = ""
     if question_type == "PickS":
         dynamic_rules = """
-        6. MATH RULE FOR PickS (CRITICAL):
-        - PickS ALLOWS 5, 6, 7, or 8 options. NEVER say "PickS needs 4 options". 
-        - The question stem MUST explicitly state the number of correct answers (e.g., "Welche 3 Aussagen...").
-        - The total number of options MUST be at least TWICE the number asked for (e.g., if asking for 3, there MUST be at least 6 options). If it fails this math, flag it!
+        RULE 2: MATH RULE FOR PickS (CRITICAL)
+        - Determine the number of correct answers (N). Find N by reading the question stem (e.g., "Welche DREI Aussagen...") OR by counting how many options are formatted in **bold** markdown in the provided text.
+        - If you CANNOT find N, SKIP the math check. DO NOT flag the missing number.
+        - If you CAN find N: Calculate the minimum required options M = N * 2.
+        - Count the actual answer options provided (X).
+        - If X < M, you MUST FLAG IT with the comment: "Bei [N] richtigen Antworten werden mindestens [M] Optionen benötigt. Hier sind nur [X]."
         """
     elif question_type == "Kprim":
         dynamic_rules = """
-        6. MATH RULE FOR Kprim (CRITICAL):
-        - Kprim MUST have EXACTLY 4 options. If it has 5 or 3, flag it with: "Bitte genau 4 Antwortoptionen bei Kprim."
+        RULE 2: MATH RULE FOR Kprim (CRITICAL)
+        - Kprim MUST have EXACTLY 4 answer options (usually A, B, C, D).
+        - Count the actual options. If there are 3, 5, or any number other than 4, you MUST FLAG IT with the comment: "Bitte genau 4 Antwortoptionen bei Kprim."
         """
     else:
         dynamic_rules = """
-        6. MATH RULE FOR TypA:
+        RULE 2: MATH RULE FOR TypA
         - TypA usually has 4 or 5 options. Do not flag the number of options.
         """
 
     json_instruction = """
-    OUTPUT FORMAT: Return a valid JSON object ONLY.
+    OUTPUT FORMAT: Return a valid JSON object ONLY. Do not output markdown code blocks outside the JSON.
     {
       "_scratchpad": {
-        "step_1_question_type": "Kprim, PickS or TypA",
-        "step_2_number_of_options_counted": 5,
-        "step_3_check_absolute_words": "Did I only flag from the 6 allowed words?"
+        "step_1_options": "Count the answer options present: [X]",
+        "step_2_math": "Type: [Type]. N: [N or Unknown]. M (N*2): [M]. X: [X]. Math error? [Yes/No/Skipped]",
+        "step_3_whitelist": "Did I find 'immer', 'nie', 'alle', 'ausschließlich', 'stets', 'kein'? [Yes/No]. If Yes, is it in ALL options? [Yes/No]. Is it 'allein' or 'ausschließen'? [Yes/No]",
+        "step_4_chatty_check": "I will ONLY write comments for actual errors. I will NOT write comments about words I ignored."
       },
       "feedback_comments": [
         {
-          "exact_quote": "Exact text from the document",
-          "comment": "Short, professional explanation in German. e.g., 'Das absolute Wort (immer) ist nicht erlaubt.' or 'Bei 3 richtigen Antworten werden mindestens 6 Optionen benötigt.'"
+          "exact_quote": "Exact string causing the error (e.g., the absolute word, or the extra option letter like 'E')",
+          "comment": "Short explanation in German. (e.g., 'Bitte genau 4 Antwortoptionen bei Kprim.' or 'Das absolute Wort (immer) ist nicht erlaubt.')"
         }
       ]
     }
@@ -122,10 +126,27 @@ def process_single_question(question_data, model_version="base"):
                 {"role": "user", "content": question_data["markdown"]}
             ]
         )
-        feedback = json.loads(response.choices[0].message.content)
+        raw = response.choices[0].message.content
+        feedback = json.loads(raw)
+        n_comments = len(feedback.get('feedback_comments', []))
+        import progress
+        progress.current_status.setdefault("debug_log", []).append({
+            "q": question_data["id"],
+            "type": question_data["type"],
+            "preview": question_data["markdown"][:120],
+            "comments": n_comments,
+            "scratchpad": feedback.get("_scratchpad", {}),
+            "raw_preview": raw[:500]
+        })
         return {"id": question_data["id"], "success": True, "feedback": feedback}
     except Exception as e:
-        logging.error(f"Error processing question {question_data['id']}: {e}")
+        import progress
+        progress.current_status.setdefault("debug_log", []).append({
+            "q": question_data["id"],
+            "type": question_data["type"],
+            "preview": question_data["markdown"][:120],
+            "error": f"{type(e).__name__}: {e}"
+        })
         return {"id": question_data["id"], "success": False, "error": str(e)}
 
 

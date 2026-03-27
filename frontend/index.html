@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Klausur-Evaluator · UKW</title>
+    <title>Exam Evaluator · UKW</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;500;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome 6.4 for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Three.js r160 -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 </head>
@@ -13,9 +15,211 @@
 
     <!-- Three.js lives here, behind everything -->
     <canvas id="bg" aria-hidden="true"></canvas>
+    
+    <!-- Indicator for switching models via TAB -->
+    <div id="model-indicator" class="model-indicator" aria-hidden="true"></div>
+
+    <!-- ⓪ SLIDES SCREEN -->
+    <div id="screen-slides" class="screen active">
+        <div class="slides-container">
+            <!-- Slide 0: Title -->
+            <div class="slide slide-active" id="slide-0">
+                <img src="icon.svg" alt="UKW Logo" style="position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 64px; filter: drop-shadow(0 2px 8px rgba(19,67,149,0.12));">
+                <div class="title-wrap">
+                    <h1 class="slide-title">SmartExam</h1>
+                    <div class="slide-subtitle">Team: Fabian, Faisalrehman, Junaid, Pratyay</div>
+                </div>
+                <div class="slide-nav-hint">Press <i class="fa-solid fa-arrow-right"></i> to continue</div>
+            </div>
+            
+            <!-- Project Criteria Overview -->
+            <div class="slide" id="slide-1">
+                <h2 class="slide-title" style="margin-bottom: 24px; font-size:42px;">Project Criteria Overview</h2>
+                
+                <div style="display: flex; gap: 32px; justify-content: center; width: 100%; max-width: 1100px;">
+                    <!-- Question Types -->
+                    <div class="hg-col" style="flex: 1; text-align: left; padding: 32px; background: rgba(255,255,255,0.8); border-radius: 20px; box-shadow: 0 16px 48px rgba(19, 67, 149, 0.08); border: 1.5px solid var(--line);">
+                        <h3 style="font-size: 24px; color: var(--blue); margin-bottom: 24px; border-bottom: 2px solid var(--line); padding-bottom: 12px;"><i class="fa-solid fa-layer-group" style="margin-right: 8px;"></i> Question Types</h3>
+                        
+                        <div style="margin-bottom: 24px;">
+                            <span class="type-badge" style="font-size: 14px; padding: 4px 8px;">Type A (Pos/Neg)</span>
+                            <div style="font-size: 15px; color: var(--muted); margin-top: 8px; line-height: 1.5;">Single Choice. Only <strong>1 correct</strong> (Positive) or <strong>1 incorrect</strong> (Negative) answer out of 4-5 options.</div>
+                        </div>
+                        
+                        <div style="margin-bottom: 24px;">
+                            <span class="type-badge" style="font-size: 14px; padding: 4px 8px; background: #00964E;">Kprim</span>
+                            <div style="font-size: 15px; color: var(--muted); margin-top: 8px; line-height: 1.5;">Quadruple choice. Exactly <strong>4 options</strong>. Each statement must be evaluated individually as <em>True</em> (+) or <em>False</em> (-).</div>
+                        </div>
+                        
+                        <div>
+                            <span class="type-badge" style="font-size: 14px; padding: 4px 8px; background: #f59e0b;">PickS / PickN</span>
+                            <div style="font-size: 15px; color: var(--muted); margin-top: 8px; line-height: 1.5;">Multiple Choice. For N correct answers, exactly <strong>M = N × 2</strong> options must exist.</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Linter Rules -->
+                    <div class="hg-col" style="flex: 1; text-align: left; padding: 32px; background: rgba(255,255,255,0.8); border-radius: 20px; box-shadow: 0 16px 48px rgba(19, 67, 149, 0.08); border: 1.5px solid var(--line);">
+                        <h3 style="font-size: 24px; color: #ef4444; margin-bottom: 24px; border-bottom: 2px solid var(--line); padding-bottom: 12px;"><i class="fa-solid fa-triangle-exclamation" style="margin-right: 8px;"></i> Linter Rules (Forbidden)</h3>
+                        
+                        <ul style="list-style: none; display: flex; flex-direction: column; gap: 20px; margin: 0; padding: 0;">
+                            <li style="display: flex; gap: 16px; align-items: flex-start;">
+                                <i class="fa-solid fa-ban" style="color: #ef4444; margin-top: 4px; font-size: 18px;"></i>
+                                <div>
+                                    <strong style="font-size: 16px; color: var(--ink);">Absolute Trigger Words</strong>
+                                    <div style="font-size: 14px; color: var(--muted); margin-top: 6px; line-height: 1.4;">"always", "never", "all", "exclusively", "constantly", "none" provide unintended hints.</div>
+                                </div>
+                            </li>
+                            <li style="display: flex; gap: 16px; align-items: flex-start;">
+                                <i class="fa-solid fa-ban" style="color: #ef4444; margin-top: 4px; font-size: 18px;"></i>
+                                <div>
+                                    <strong style="font-size: 16px; color: var(--ink);">Double Negatives</strong>
+                                    <div style="font-size: 14px; color: var(--muted); margin-top: 6px; line-height: 1.4;">Avoids confusing syntax (e.g., "Which statement is <em>not incorrect</em>?").</div>
+                                </div>
+                            </li>
+                            <li style="display: flex; gap: 16px; align-items: flex-start;">
+                                <i class="fa-solid fa-ban" style="color: #ef4444; margin-top: 4px; font-size: 18px;"></i>
+                                <div>
+                                    <strong style="font-size: 16px; color: var(--ink);">Length Cues</strong>
+                                    <div style="font-size: 14px; color: var(--muted); margin-top: 6px; line-height: 1.4;">When one option is noticeably longer and more detailed than the rest (usually the correct answer).</div>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Slide 2: Architecture -->
+            <div class="slide" id="slide-2">
+                <h2 class="slide-title" style="margin-bottom: 24px;">Pipeline Architecture</h2>
+                
+                <div class="fc-landscape">
+                    <!-- 1. Source & Prep -->
+                    <div class="fc-col doc-col">
+                        <div class="fc-card file-card">
+                            <div class="card-header"><i class="fa-solid fa-file-word"></i> Source Document</div>
+                            <div class="doc-body flex-col-center">
+                                <i class="fa-regular fa-file-word fa-4x" style="color:var(--blue); margin-bottom: 8px;"></i>
+                                <span style="font-weight:700;">Exam.docx</span>
+                            </div>
+                        </div>
+                        
+                        <div class="fc-arrow-col vertical" style="flex: 1; min-height: 30px; margin: -2px 0;"><div class="arr-line"></div></div>
+                        
+                        <div class="fc-card file-card">
+                            <div class="card-header"><i class="fa-brands fa-markdown"></i> Markdown Extractor</div>
+                            <div class="doc-body">
+                                <span>### Q1: Kprim Malaria</span>
+                                <span>### Q2: PickS...</span>
+                                <span>### Q3: Therapie...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Arrow: Chunking -->
+                    <div class="fc-arrow-col" style="justify-content: flex-end; padding-bottom: 55px;">
+                        <span class="arr-lbl">for each<br>exam question</span>
+                        <div class="arr-line bg-arrow"></div>
+                    </div>
+
+                    <!-- 2. Dual Engine Core -->
+                    <div class="fc-col core-col">
+                        <div class="fc-card core-card">
+                            <div class="core-header">
+                                <span class="pulse"></span> Asynchronous processing per question
+                            </div>
+                            
+                            <div class="worker-thread">
+                                <div class="wt-excerpt" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+                                    <div><span class="type-badge">Kprim</span> <strong>"Which statements apply to Malaria?"</strong></div>
+                                    <div style="font-family: 'SFMono-Regular', monospace; font-size: 10.5px; color: var(--muted); padding-left: 12px; border-left: 2px solid var(--blue); line-height: 1.5; display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 2px; width: 100%;">
+                                        <div>A) Plasmodium</div>
+                                        <div>B) <strong style="color:var(--ink)">always</strong> fatal</div>
+                                        <div>C) Anopheles mosquito</div>
+                                        <div>D) Prophylaxis</div>
+                                        <div style="color:#ef4444; font-weight:700;">E) Vaccination possible</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="wt-pipeline" style="flex-direction: column; gap: 4px;">
+                                    <div class="wt-step" style="flex-direction: column; align-items: stretch; text-align: left; padding: 12px; gap: 12px; border: 2px solid var(--blue); background: #fdfdfd; box-shadow: 0 8px 24px rgba(19,67,149,0.08);">
+                                        <div style="display: flex; align-items: center; justify-content: space-between; color: var(--blue);">
+                                            <div style="display: flex; align-items:center; gap: 8px;">
+                                                <i class="fa-solid fa-brain fa-xl"></i>
+                                                <strong style="font-size: 14px;">Single-Pass Evaluation</strong>
+                                            </div>
+                                            <span class="type-badge" style="background:#1e293b;">gpt-4o</span>
+                                        </div>
+                                        
+                                        <!-- Abstracted Scratchpad -->
+                                        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
+                                            <div style="font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase;">1. Forced Chain of Thought</div>
+                                            
+                                            <div style="display: flex; align-items: center; gap: 10px; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line);">
+                                                <i class="fa-solid fa-calculator" style="color: var(--blue); width: 14px; text-align: center;"></i>
+                                                <div style="font-size: 12px; color: var(--ink);">Math Check: <strong style="color:#ef4444;">5 ≠ 4 (Error)</strong></div>
+                                            </div>
+                                            
+                                            <div style="display: flex; align-items: center; gap: 10px; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line);">
+                                                <i class="fa-solid fa-list-check" style="color: var(--blue); width: 14px; text-align: center;"></i>
+                                                <div style="font-size: 12px; color: var(--ink);">Whitelist: <strong style="color:#ef4444;">"always" detected</strong></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div style="text-align: center; color: var(--blue); font-size: 16px; margin: 4px 0;">
+                                        <i class="fa-solid fa-arrow-down"></i>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="worker-thread bg-t1"></div>
+                            <div class="worker-thread bg-t2"></div>
+                        </div>
+                    </div>
+
+                    <!-- Arrow: Anchor -->
+                    <div class="fc-arrow-col" style="justify-content: flex-start; padding-top: 55px;">
+                        <span class="arr-lbl">Comments<br>in JSON</span>
+                        <div class="arr-line bg-arrow"></div>
+                    </div>
+
+                    <!-- 3. Output -->
+                    <div class="fc-col doc-col">
+                        <div class="fc-card file-card">
+                            <div class="card-header"><i class="fa-solid fa-file-code"></i> Structured JSON</div>
+                            <div class="doc-body code-style">
+                                [<br>
+                                &nbsp;&nbsp;{ "id": "1", "issue": "format" },<br>
+                                &nbsp;&nbsp;{ "id": "2", "issue": "always" }<br>
+                                ]
+                            </div>
+                        </div>
+                        
+                        <div class="fc-arrow-col vertical" style="flex: 1; min-height: 30px; margin: -2px 0;"><div class="arr-line"></div></div>
+                        
+                        <div class="fc-card file-card annotated">
+                            <div class="card-header" style="background:#1e293b; color:#fff; border:none;"><i class="fa-brands fa-python"></i> python-docx</div>
+                            <div class="doc-body" style="padding-bottom:8px; display:flex; flex-direction:column; gap:4px;">
+                                <div style="display:flex; flex-direction:column; gap:2px;">
+                                    <span>B) <mark>always</mark> fatal.</span>
+                                    <span class="cmt" style="margin-left: 16px; font-size: 0.9em;">↳ 💬 Comment 1</span>
+                                </div>
+                                <div style="display:flex; flex-direction:column; gap:2px;">
+                                    <span>E) Vaccination.</span>
+                                    <span class="cmt" style="margin-left: 16px; font-size: 0.9em; color:#ef4444;">↳ 💬 Comment 2</span>
+                                </div>
+                            </div>
+                            <div class="card-footer" style="color:var(--green)"><i class="fa-solid fa-check"></i> .docx Complete</div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- ① UPLOAD SCREEN -->
-    <div id="screen-upload" class="screen active">
+    <div id="screen-upload" class="screen">
 
         <div class="logo-wrap">
             <img src="icon.svg" alt="Uniklinikum Würzburg" class="ukw-logo">
@@ -35,11 +239,11 @@
                 <line x1="12" y1="3" x2="12" y2="15"/>
             </svg>
 
-            <p class="dz-label"><strong>.docx</strong>-Datei hier ablegen</p>
+            <p class="dz-label">Drop <strong>.docx</strong> file here</p>
             <input type="file" id="file-input" accept=".docx" hidden>
         </div>
 
-        <button id="evaluate-btn" class="run-btn" disabled>Analyse starten →</button>
+        <button id="evaluate-btn" class="run-btn" disabled>Start Analysis →</button>
 
     </div>
 
@@ -51,7 +255,7 @@
         <div class="scanner">
 
             <!-- phase label at top -->
-            <div class="scan-phase" id="scan-phase">Initialisierung…</div>
+            <div class="scan-phase" id="scan-phase">Initializing...</div>
 
             <!-- question rows filled by JS; beam lives here so it never hits footer -->
             <div id="q-rows" class="q-rows" aria-live="polite">
@@ -77,9 +281,9 @@
                 <polyline class="done-tick" points="22,37 31,46 50,26"
                           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            <p class="done-word">Fertig.</p>
-            <button id="download-btn" class="dl-btn">Annotierte Datei herunterladen</button>
-            <button id="restart-btn" class="restart-link">Weitere Klausur analysieren →</button>
+            <p class="done-word">Done.</p>
+            <button id="download-btn" class="dl-btn">Download Annotated File</button>
+            <button id="restart-btn" class="restart-link">Analyze another exam →</button>
         </div>
     </div>
 
