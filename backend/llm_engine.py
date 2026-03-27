@@ -3,21 +3,16 @@ import concurrent.futures
 from openai import AzureOpenAI
 import logging
 import os
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 ENDPOINT = "https://smartexamapp.openai.azure.com/"
 API_KEY = os.environ.get("AZURE_OPENAI_API_KEY", "")
-API_VERSION = "2025-01-01-preview"
-DEPLOYMENT = "gpt-4o-2024-08-06-exam-linter-v1"
-
-def set_model_choice(model_name: str):
-    global DEPLOYMENT
-    if model_name == "base":
-        DEPLOYMENT = "gpt-4o"
-    else:
-        DEPLOYMENT = "gpt-4o-2024-08-06-exam-linter-v1"
+API_VERSION = "2024-12-01-preview"
+DEPLOYMENT = "gpt-4o"
 
 FT_API_VERSION = "2025-01-01-preview"
 FT_DEPLOYMENT = "gpt-4o-2024-08-06-exam-linter-v1"
@@ -116,6 +111,13 @@ def process_single_question(question_data, model_version="base"):
         current_client = client
         current_deployment = DEPLOYMENT
     
+    qid = question_data["id"]
+    qtype = question_data["type"]
+    user_input = question_data["markdown"]
+
+    logging.info(f"[LLM REQUEST] Q{qid} | type={qtype} | model={current_deployment} | input_len={len(user_input)}")
+    logging.info(f"[LLM REQUEST] Q{qid} | input_preview: {user_input[:200]}")
+
     try:
         response = current_client.chat.completions.create(
             model=current_deployment,
@@ -123,31 +125,38 @@ def process_single_question(question_data, model_version="base"):
             temperature=0.1,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": question_data["markdown"]}
+                {"role": "user", "content": user_input}
             ]
         )
         raw = response.choices[0].message.content
         feedback = json.loads(raw)
         n_comments = len(feedback.get('feedback_comments', []))
+
+        logging.info(f"[LLM RESPONSE] Q{qid} | status=OK | comments={n_comments} | raw_len={len(raw)}")
+        logging.info(f"[LLM RESPONSE] Q{qid} | raw_output: {raw[:500]}")
+
         import progress
         progress.current_status.setdefault("debug_log", []).append({
-            "q": question_data["id"],
-            "type": question_data["type"],
-            "preview": question_data["markdown"][:120],
+            "q": qid,
+            "type": qtype,
+            "preview": user_input[:120],
             "comments": n_comments,
             "scratchpad": feedback.get("_scratchpad", {}),
             "raw_preview": raw[:500]
         })
-        return {"id": question_data["id"], "success": True, "feedback": feedback}
+        return {"id": qid, "success": True, "feedback": feedback}
     except Exception as e:
+        logging.error(f"[LLM ERROR] Q{qid} | model={current_deployment} | error={type(e).__name__}: {e}")
+        logging.error(f"[LLM ERROR] Q{qid} | input_preview: {user_input[:300]}")
+
         import progress
         progress.current_status.setdefault("debug_log", []).append({
-            "q": question_data["id"],
-            "type": question_data["type"],
-            "preview": question_data["markdown"][:120],
+            "q": qid,
+            "type": qtype,
+            "preview": user_input[:120],
             "error": f"{type(e).__name__}: {e}"
         })
-        return {"id": question_data["id"], "success": False, "error": str(e)}
+        return {"id": qid, "success": False, "error": str(e)}
 
 
 def process_exam_in_parallel(exam_questions, model_version="base"):
