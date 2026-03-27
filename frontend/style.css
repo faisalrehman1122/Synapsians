@@ -486,6 +486,32 @@ body {
 .toast.toast-visible { opacity:1; transform:translateX(-50%) translateY(0); }
 .toast.toast-error   { background:#991b1b; }
 
+/* ── Model Indicator ────────────────────────────────── */
+.model-indicator {
+    position: fixed;
+    bottom: 24px;
+    left: 24px;
+    z-index: 999;
+    background: rgba(255, 255, 255, 0.78);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.95);
+    color: var(--blue);
+    padding: 8px 16px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    pointer-events: none;
+    box-shadow: 0 4px 20px rgba(19, 67, 149, 0.15);
+    opacity: 0;
+    transition: opacity 0.8s ease;
+}
+
+.model-indicator.show {
+    opacity: 1;
+    transition: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
         animation-duration: 0.01ms !important;

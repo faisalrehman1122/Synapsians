@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Request
+from fastapi import FastAPI, UploadFile, File, Request, Form
 from fastapi.responses import Response, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from document_processor import process_exam_document
@@ -30,7 +30,10 @@ def get_status():
     return progress.current_status
 
 @app.post("/evaluate")
-async def evaluate_exam(file: UploadFile = File(...)):
+async def evaluate_exam(file: UploadFile = File(...), model: str = Form("finetuned")):
+    import llm_engine
+    llm_engine.set_model_choice(model)
+    
     # Reset all state for this new run
     progress.reset()
     progress.current_status["message"]  = "Uploading & initialising…"

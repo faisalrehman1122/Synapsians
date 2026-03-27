@@ -10,7 +10,14 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 ENDPOINT = "https://smartexamapp.openai.azure.com/"
 API_KEY = os.environ.get("AZURE_OPENAI_API_KEY", "")
 API_VERSION = "2025-01-01-preview"
-DEPLOYMENT = "gpt-4o"
+DEPLOYMENT = "gpt-4o-2024-08-06-exam-linter-v1"
+
+def set_model_choice(model_name: str):
+    global DEPLOYMENT
+    if model_name == "base":
+        DEPLOYMENT = "gpt-4o"
+    else:
+        DEPLOYMENT = "gpt-4o-2024-08-06-exam-linter-v1"
 
 client = AzureOpenAI(
     api_version=API_VERSION,

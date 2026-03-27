@@ -318,6 +318,32 @@
 // ── App logic ──────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
 
+    const urlParams = new URLSearchParams(window.location.search);
+    window._selectedModel = urlParams.get('model') === 'base' ? 'base' : 'finetuned';
+
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab') {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            e.preventDefault();
+            
+            window._selectedModel = window._selectedModel === 'finetuned' ? 'base' : 'finetuned';
+            
+            const url = new URL(window.location);
+            url.searchParams.set('model', window._selectedModel);
+            window.history.replaceState({}, '', url);
+
+            const indicator = document.getElementById('model-indicator');
+            if (indicator) {
+                indicator.textContent = window._selectedModel === 'finetuned' ? 'Finetuned Model (gpt-4o-exam-linter-v1)' : 'Base Model (gpt-4o)';
+                indicator.classList.add('show');
+                clearTimeout(window._modelIndicatorTimeout);
+                window._modelIndicatorTimeout = setTimeout(() => {
+                    indicator.classList.remove('show');
+                }, 1500);
+            }
+        }
+    });
+
     const dropZone   = document.getElementById('drop-zone');
     const fileInput  = document.getElementById('file-input');
     const evalBtn    = document.getElementById('evaluate-btn');
@@ -508,6 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // then start polling after a short delay.
             const fd = new FormData();
             fd.append('file', file);
+            fd.append('model', window._selectedModel);
             const evalPromise = fetch('http://127.0.0.1:8000/evaluate', { method: 'POST', body: fd });
 
             // Give the backend time to receive the request and call progress.reset()
