@@ -9,6 +9,8 @@ current_status = {
     "questions": [],
     "questions_total": 0,
     "questions_done": 0,
+    # Debug log for frontend console
+    "debug_log": [],
 }
 
 def reset():
@@ -18,3 +20,4 @@ def reset():
     current_status["questions"]       = []
     current_status["questions_total"] = 0
     current_status["questions_done"]  = 0
+    current_status["debug_log"]       = []

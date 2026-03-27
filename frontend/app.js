@@ -469,11 +469,36 @@ document.addEventListener('DOMContentLoaded', () => {
         window._ukwPhase = 'uploading';
 
         let polling = true;
+        const loggedQs = new Set();
         const poll = async () => {
             if (!polling) return;
             try {
                 const d = await (await fetch('http://127.0.0.1:8000/status')).json();
                 applyStatus(d);
+                if (d.debug_log && d.debug_log.length) {
+                    d.debug_log.forEach(entry => {
+                        if (loggedQs.has(entry.q)) return;
+                        loggedQs.add(entry.q);
+                        const label = `Q${entry.q} [${entry.type || '?'}]`;
+                        const preview = entry.preview ? `\n   📄 ${entry.preview}` : '';
+                        if (entry.error) {
+                            const policyMatch = entry.error.match(/content_filter_result.*?'(\w+)':\s*\{'filtered': True,\s*'severity':\s*'(\w+)'/);
+                            const policy = policyMatch ? policyMatch[1] : 'unknown';
+                            const severity = policyMatch ? policyMatch[2] : '?';
+                            console.warn(`⛔ ${label} — blocked by Azure content filter: ${policy} (severity: ${severity})${preview}`);
+                        } else if (entry.comments > 0) {
+                            console.log(`✅ ${label} — ${entry.comments} comment(s):${preview}`);
+                            try {
+                                const raw = JSON.parse(entry.raw_preview);
+                                (raw.feedback_comments || []).forEach(c =>
+                                    console.log(`   💬 "${c.exact_quote}" → ${c.comment}`)
+                                );
+                            } catch(_) {}
+                        } else {
+                            console.log(`✅ ${label} — no issues found`);
+                        }
+                    });
+                }
             } catch (_) {}
             if (polling) setTimeout(poll, 300);
         };
@@ -491,7 +516,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const resp = await evalPromise;
             polling = false;
 
-            if (!resp.ok) { const e = await resp.json(); throw new Error(e.error || 'Server error'); }
+            if (!resp.ok) {
+                let errMsg = 'Server error ' + resp.status;
+                try { const e = await resp.json(); errMsg = e.error || errMsg; } catch(_) {}
+                throw new Error(errMsg);
+            }
 
             const blob = await resp.blob();
             if (blobUrl) URL.revokeObjectURL(blobUrl);
@@ -515,6 +544,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             polling = false;
             window._ukwPhase = 'idle';
+            console.error('[Evaluate] Backend error:', err);
             goTo('upload');
             toast('Fehler: ' + err.message, 'error');
         }

@@ -1,9 +1,10 @@
-from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import Response
+from fastapi import FastAPI, UploadFile, File, Request
+from fastapi.responses import Response, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from document_processor import process_exam_document
 import uvicorn
 import progress
+import traceback
 
 app = FastAPI()
 
@@ -14,6 +15,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch-all: ensures every crash returns JSON with CORS headers."""
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"error": f"Internal server error: {str(exc)}"}
+    )
 
 @app.get("/status")
 def get_status():
@@ -36,16 +46,29 @@ async def evaluate_exam(file: UploadFile = File(...)):
     progress.current_status["progress"] = 10
     progress.current_status["phase"]    = "parsing"
 
-    modified_docx_bytes = await process_exam_document(file_bytes)
+    try:
+        modified_docx_bytes = await process_exam_document(file_bytes)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        progress.current_status["message"]  = f"Error: {e}"
+        progress.current_status["phase"]    = "idle"
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Backend processing failed: {str(e)}"}
+        )
 
     progress.current_status["message"]  = "Complete!"
     progress.current_status["progress"] = 100
     progress.current_status["phase"]    = "complete"
 
+    from urllib.parse import quote
+    safe_name = quote(f"evaluated_{file.filename}")
     return Response(
         content=modified_docx_bytes,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f'attachment; filename="evaluated_{file.filename}"'}
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{safe_name}"}
     )
 
 if __name__ == "__main__":
