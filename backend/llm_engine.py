@@ -9,8 +9,17 @@ API_KEY = os.environ.get("AZURE_OPENAI_API_KEY", "")
 API_VERSION = "2024-12-01-preview"
 DEPLOYMENT = "gpt-4o"
 
+FT_API_VERSION = "2025-01-01-preview"
+FT_DEPLOYMENT = "gpt-4o-2024-08-06-exam-linter-v1"
+
 client = AzureOpenAI(
     api_version=API_VERSION,
+    azure_endpoint=ENDPOINT,
+    api_key=API_KEY
+)
+
+client_ft = AzureOpenAI(
+    api_version=FT_API_VERSION,
     azure_endpoint=ENDPOINT,
     api_key=API_KEY
 )
@@ -76,16 +85,19 @@ def build_system_prompt(question_type):
     return f"{base_prompt}\n{dynamic_rules}\n{json_instruction}"
 
 
-def process_single_question(question_data):
+def process_single_question(question_data, use_finetuned=False):
     """
     Processes a single question via Azure OpenAI.
     question_data should be a dict: {"id": 1, "type": "PickS", "markdown": "..."}
     """
     system_prompt = build_system_prompt(question_data["type"])
     
+    current_client = client_ft if use_finetuned else client
+    current_deployment = FT_DEPLOYMENT if use_finetuned else DEPLOYMENT
+    
     try:
-        response = client.chat.completions.create(
-            model=DEPLOYMENT,
+        response = current_client.chat.completions.create(
+            model=current_deployment,
             response_format={ "type": "json_object" },
             temperature=0.1,
             messages=[
@@ -100,7 +112,7 @@ def process_single_question(question_data):
         return {"id": question_data["id"], "success": False, "error": str(e)}
 
 
-def process_exam_in_parallel(exam_questions):
+def process_exam_in_parallel(exam_questions, use_finetuned=False):
     """
     Takes a list of question dictionaries and processes them concurrently.
     Populates progress.current_status with per-question status for frontend viz.
@@ -136,7 +148,7 @@ def process_exam_in_parallel(exam_questions):
         if idx >= 0:
             progress.current_status["questions"][idx]["status"] = "active"
 
-        result = process_single_question(question_data)
+        result = process_single_question(question_data, use_finetuned=use_finetuned)
 
         with lock:
             completed += 1
@@ -149,7 +161,6 @@ def process_exam_in_parallel(exam_questions):
             progress.current_status["progress"]        = 30 + int((completed / max(total, 1)) * 55)
 
         return result
-
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures = {executor.submit(run_with_tracking, q): q for q in exam_questions}
         for future in concurrent.futures.as_completed(futures):

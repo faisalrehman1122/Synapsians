@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Query
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from document_processor import process_exam_document
@@ -20,7 +20,10 @@ def get_status():
     return progress.current_status
 
 @app.post("/evaluate")
-async def evaluate_exam(file: UploadFile = File(...)):
+async def evaluate_exam(
+    file: UploadFile = File(...),
+    FINETUNED_MODEL: bool = Query(False, description="Use the fine-tuned GPT model")
+):
     # Reset all state for this new run
     progress.reset()
     progress.current_status["message"]  = "Uploading & initialising…"
@@ -32,11 +35,11 @@ async def evaluate_exam(file: UploadFile = File(...)):
 
     file_bytes = await file.read()
 
-    progress.current_status["message"]  = "Analysing document structure…"
+    progress.current_status["message"]  = f"Analysing document structure (Fine-Tuned: {FINETUNED_MODEL})…"
     progress.current_status["progress"] = 10
     progress.current_status["phase"]    = "parsing"
 
-    modified_docx_bytes = await process_exam_document(file_bytes)
+    modified_docx_bytes = await process_exam_document(file_bytes, use_finetuned=FINETUNED_MODEL)
 
     progress.current_status["message"]  = "Complete!"
     progress.current_status["progress"] = 100

@@ -4,7 +4,7 @@ from docx import Document
 from rules_engine import check_formatting_rules
 import progress
 
-async def process_exam_document(file_bytes: bytes) -> bytes:
+async def process_exam_document(file_bytes: bytes, use_finetuned: bool = False) -> bytes:
     doc = Document(io.BytesIO(file_bytes))
     
     # 1. Read exam type from header
@@ -79,7 +79,7 @@ async def process_exam_document(file_bytes: bytes) -> bytes:
     progress.current_status["progress"] = 30
     progress.current_status["phase"]    = "processing"
     
-    llm_results = await asyncio.to_thread(process_exam_in_parallel, exam_questions)
+    llm_results = await asyncio.to_thread(process_exam_in_parallel, exam_questions, use_finetuned)
     
     # Extract feedback format to match downstream Word Comment insertion logic
     progress.current_status["message"] = "Collating rules and LLM annotations..."
