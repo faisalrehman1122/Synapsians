@@ -12,6 +12,9 @@ DEPLOYMENT = "gpt-4o"
 FT_API_VERSION = "2025-01-01-preview"
 FT_DEPLOYMENT = "gpt-4o-2024-08-06-exam-linter-v1"
 
+FT2_API_VERSION = "2025-01-01-preview"
+FT2_DEPLOYMENT = "gpt-4o-2024-08-06-exam-linter-v2"
+
 client = AzureOpenAI(
     api_version=API_VERSION,
     azure_endpoint=ENDPOINT,
@@ -20,6 +23,12 @@ client = AzureOpenAI(
 
 client_ft = AzureOpenAI(
     api_version=FT_API_VERSION,
+    azure_endpoint=ENDPOINT,
+    api_key=API_KEY
+)
+
+client_ft2 = AzureOpenAI(
+    api_version=FT2_API_VERSION,
     azure_endpoint=ENDPOINT,
     api_key=API_KEY
 )
@@ -85,15 +94,23 @@ def build_system_prompt(question_type):
     return f"{base_prompt}\n{dynamic_rules}\n{json_instruction}"
 
 
-def process_single_question(question_data, use_finetuned=False):
+def process_single_question(question_data, model_version="base"):
     """
     Processes a single question via Azure OpenAI.
     question_data should be a dict: {"id": 1, "type": "PickS", "markdown": "..."}
+    model_version: "base", "v1", or "v2"
     """
     system_prompt = build_system_prompt(question_data["type"])
     
-    current_client = client_ft if use_finetuned else client
-    current_deployment = FT_DEPLOYMENT if use_finetuned else DEPLOYMENT
+    if model_version == "v2":
+        current_client = client_ft2
+        current_deployment = FT2_DEPLOYMENT
+    elif model_version == "v1":
+        current_client = client_ft
+        current_deployment = FT_DEPLOYMENT
+    else:
+        current_client = client
+        current_deployment = DEPLOYMENT
     
     try:
         response = current_client.chat.completions.create(
@@ -112,10 +129,11 @@ def process_single_question(question_data, use_finetuned=False):
         return {"id": question_data["id"], "success": False, "error": str(e)}
 
 
-def process_exam_in_parallel(exam_questions, use_finetuned=False):
+def process_exam_in_parallel(exam_questions, model_version="base"):
     """
     Takes a list of question dictionaries and processes them concurrently.
     Populates progress.current_status with per-question status for frontend viz.
+    model_version: "base", "v1", or "v2"
     """
     import progress
     import threading
@@ -148,7 +166,7 @@ def process_exam_in_parallel(exam_questions, use_finetuned=False):
         if idx >= 0:
             progress.current_status["questions"][idx]["status"] = "active"
 
-        result = process_single_question(question_data, use_finetuned=use_finetuned)
+        result = process_single_question(question_data, model_version=model_version)
 
         with lock:
             completed += 1

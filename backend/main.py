@@ -22,7 +22,8 @@ def get_status():
 @app.post("/evaluate")
 async def evaluate_exam(
     file: UploadFile = File(...),
-    FINETUNED_MODEL: bool = Query(False, description="Use the fine-tuned GPT model")
+    FINETUNED_MODEL: bool = Query(False, description="Use fine-tuned model v1"),
+    FINETUNED_MODEL2: bool = Query(False, description="Use fine-tuned model v2")
 ):
     # Reset all state for this new run
     progress.reset()
@@ -33,13 +34,21 @@ async def evaluate_exam(
     if not file.filename.endswith(".docx"):
         return {"error": "Invalid file format. Only .docx files are supported."}
 
+    # Determine which model to use (v2 takes priority if both are set)
+    if FINETUNED_MODEL2:
+        model_version = "v2"
+    elif FINETUNED_MODEL:
+        model_version = "v1"
+    else:
+        model_version = "base"
+
     file_bytes = await file.read()
 
-    progress.current_status["message"]  = f"Analysing document structure (Fine-Tuned: {FINETUNED_MODEL})…"
+    progress.current_status["message"]  = f"Analysing document structure (Model: {model_version})…"
     progress.current_status["progress"] = 10
     progress.current_status["phase"]    = "parsing"
 
-    modified_docx_bytes = await process_exam_document(file_bytes, use_finetuned=FINETUNED_MODEL)
+    modified_docx_bytes = await process_exam_document(file_bytes, model_version=model_version)
 
     progress.current_status["message"]  = "Complete!"
     progress.current_status["progress"] = 100
