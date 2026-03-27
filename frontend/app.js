@@ -229,7 +229,7 @@
     // ════════════════════════════════════════════════════════
     // 4. PHASE-REACTIVE ANIMATION LOOP
     // ════════════════════════════════════════════════════════
-    window._ukwPhase    = 'idle';
+    window._ukwPhase    = 'slides';
     window._ukwProgress = 0;
 
     let time = 0;
@@ -242,6 +242,10 @@
     const greenC = new THREE.Color(0x00964E);
     const midC   = new THREE.Color(0x4a7fd4);
 
+    const camTargetPos = new THREE.Vector3(0, -5, 45);
+    const camTargetLook = new THREE.Vector3(0, 30, -80);
+    const curLookAt = new THREE.Vector3(0, 30, -80);
+
     function animate() {
         requestAnimationFrame(animate);
         const dt = 0.007;
@@ -252,6 +256,8 @@
 
         // Phase targets
         switch (phase) {
+            case 'slides':
+                tGridOp = 0.04; tWvSpeed = 0.18; tWvOp = 0.6; tGridScroll = 2; break;
             case 'uploading': case 'parsing':
                 tGridOp = 0.09; tWvSpeed = 0.44; tWvOp = 1.05; tGridScroll = 6; break;
             case 'processing':
@@ -303,10 +309,18 @@
             tw.mesh.rotation.y = Math.sin(time * curWvSpeed * 0.3 + idx) * 0.03;
         });
 
-        // ── Camera breathing ──
-        camera.position.x = Math.sin(time * 0.10) * 2.5;
-        camera.position.y = 16 + Math.sin(time * 0.17) * 0.6;
-        camera.lookAt(0, 0, -80);
+        // ── Camera breathing & panning ──
+        if (phase === 'slides') {
+            camTargetPos.set(Math.sin(time * 0.05) * 2, -2 + (time * 0.4), 45);
+            camTargetLook.set(0, 25 + time * 0.2, -80);
+        } else {
+            camTargetPos.set(Math.sin(time * 0.10) * 2.5, 16 + Math.sin(time * 0.17) * 0.6, 38);
+            camTargetLook.set(0, 0, -80);
+        }
+
+        camera.position.lerp(camTargetPos, L * 1.5);
+        curLookAt.lerp(camTargetLook, L * 1.5);
+        camera.lookAt(curLookAt);
 
         renderer.render(scene, camera);
     }
@@ -355,6 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const scanPct    = document.getElementById('scan-pct');
 
     const screens = {
+        slides:   document.getElementById('screen-slides'),
         upload:   document.getElementById('screen-upload'),
         analysis: document.getElementById('screen-analysis'),
         done:     document.getElementById('screen-done'),
@@ -395,7 +410,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function pick(files) {
         if (!files.length) return;
         const f = files[0];
-        if (!f.name.match(/\.docx?$/i)) { toast('Bitte eine .docx-Datei hochladen.', 'error'); return; }
+        if (!f.name.match(/\.docx?$/i)) { toast('Please upload a .docx file.', 'error'); return; }
         file = f;
         dropZone.classList.add('has-file');
         dropZone.querySelector('.dz-label').innerHTML = `<strong>${f.name}</strong>`;
@@ -454,12 +469,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Phase label copy
     const PHASE_LABELS = {
-        idle:       'Bereit',
-        uploading:  'Hochladen…',
-        parsing:    'Dokument wird verarbeitet…',
-        processing: 'KI prüft Fragen',
-        collating:  'Feedback wird zusammengestellt…',
-        complete:   'Abgeschlossen',
+        idle:       'Ready',
+        uploading:  'Uploading...',
+        parsing:    'Processing Document...',
+        processing: 'AI analyzing Questions',
+        collating:  'Collating Feedback...',
+        complete:   'Complete',
     };
 
     function applyStatus(data) {
@@ -489,7 +504,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (beam) qRows.insertBefore(beam, qRows.firstChild);
         Object.keys(qRowMap).forEach(k => delete qRowMap[k]);
         renderedCount = 0;
-        applyStatus({ phase: 'uploading', progress: 0, message: 'Verbindung wird hergestellt…' });
+        applyStatus({ phase: 'uploading', progress: 0, message: 'Establishing connection...' });
 
         goTo('analysis');
         window._ukwPhase = 'uploading';
@@ -554,7 +569,7 @@ document.addEventListener('DOMContentLoaded', () => {
             blobUrl  = URL.createObjectURL(blob);
             evalName = 'eval_' + file.name;
 
-            applyStatus({ phase: 'complete', progress: 100, message: 'Fertig!' });
+            applyStatus({ phase: 'complete', progress: 100, message: 'Done!' });
             window._ukwPhase = 'complete';
 
             // Force all remaining rows to "done" so every bar fills to 100%
@@ -573,7 +588,7 @@ document.addEventListener('DOMContentLoaded', () => {
             window._ukwPhase = 'idle';
             console.error('[Evaluate] Backend error:', err);
             goTo('upload');
-            toast('Fehler: ' + err.message, 'error');
+            toast('Error: ' + err.message, 'error');
         }
     });
 
@@ -589,7 +604,7 @@ document.addEventListener('DOMContentLoaded', () => {
     restartBtn.addEventListener('click', () => {
         file = null; fileInput.value = '';
         dropZone.classList.remove('has-file');
-        dropZone.querySelector('.dz-label').innerHTML = `<strong>.docx</strong>-Datei hier ablegen`;
+        dropZone.querySelector('.dz-label').innerHTML = `Drop <strong>.docx</strong> file here`;
         evalBtn.disabled = true;
         window._ukwPhase = 'idle';
         goTo('upload');
@@ -610,6 +625,52 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 3500);
     }
 
+    // ── Slide Navigation ───────────────────────────────────────
+    let slideIndex = 0;
+    const NUM_SLIDES = 2; // indices 0, 1, 2
+    const slideEls = document.querySelectorAll('.slide');
+
+    function updateSlides() {
+        if (slideIndex > NUM_SLIDES) {
+            window._ukwPhase = 'idle';
+            goTo('upload');
+        } else {
+            slideEls.forEach((sl, i) => {
+                if (i === slideIndex) sl.classList.add('slide-active');
+                else sl.classList.remove('slide-active');
+            });
+        }
+    }
+
+    function handleSlideKey(e) {
+        if (window._ukwPhase !== 'slides' && window._ukwPhase !== 'idle') return;
+        if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+        
+        if (window._ukwPhase === 'slides') {
+            if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter') {
+                e.preventDefault();
+                slideIndex++;
+                updateSlides();
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                slideIndex = Math.max(0, slideIndex - 1);
+                updateSlides();
+            }
+        } else if (window._ukwPhase === 'idle' && e.key === 'ArrowLeft') {
+            e.preventDefault();
+            slideIndex = NUM_SLIDES;
+            window._ukwPhase = 'slides';
+            goTo('slides'); 
+            updateSlides();
+        }
+    }
+
+    document.addEventListener('keydown', handleSlideKey);
+
     // ── Boot ───────────────────────────────────────────────────
-    goTo('upload');
+    if (window._ukwPhase === 'slides') {
+        goTo('slides');
+    } else {
+        goTo('upload');
+    }
 });
