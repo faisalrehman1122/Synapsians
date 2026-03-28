@@ -3,24 +3,37 @@ import concurrent.futures
 from openai import AzureOpenAI
 import logging
 import os
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 ENDPOINT = "https://smartexamapp.openai.azure.com/"
 API_KEY = os.environ.get("AZURE_OPENAI_API_KEY", "")
-API_VERSION = "2025-01-01-preview"
-DEPLOYMENT = "gpt-4o-2024-08-06-exam-linter-v1"
+API_VERSION = "2024-12-01-preview"
+DEPLOYMENT = "gpt-4o"
 
-def set_model_choice(model_name: str):
-    global DEPLOYMENT
-    if model_name == "base":
-        DEPLOYMENT = "gpt-4o"
-    else:
-        DEPLOYMENT = "gpt-4o-2024-08-06-exam-linter-v1"
+FT_API_VERSION = "2025-01-01-preview"
+FT_DEPLOYMENT = "gpt-4o-2024-08-06-exam-linter-v1"
+
+FT2_API_VERSION = "2025-01-01-preview"
+FT2_DEPLOYMENT = "gpt-4o-2024-08-06-exam-linter-v2"
 
 client = AzureOpenAI(
     api_version=API_VERSION,
+    azure_endpoint=ENDPOINT,
+    api_key=API_KEY
+)
+
+client_ft = AzureOpenAI(
+    api_version=FT_API_VERSION,
+    azure_endpoint=ENDPOINT,
+    api_key=API_KEY
+)
+
+client_ft2 = AzureOpenAI(
+    api_version=FT2_API_VERSION,
     azure_endpoint=ENDPOINT,
     api_key=API_KEY
 )
@@ -80,51 +93,77 @@ def build_system_prompt(question_type):
     return f"{base_prompt}\n{dynamic_rules}\n{json_instruction}"
 
 
-def process_single_question(question_data):
+def process_single_question(question_data, model_version="base"):
     """
     Processes a single question via Azure OpenAI.
     question_data should be a dict: {"id": 1, "type": "PickS", "markdown": "..."}
+    model_version: "base", "v1", or "v2"
     """
     system_prompt = build_system_prompt(question_data["type"])
     
+    if model_version == "v2":
+        current_client = client_ft2
+        current_deployment = FT2_DEPLOYMENT
+    elif model_version == "v1":
+        current_client = client_ft
+        current_deployment = FT_DEPLOYMENT
+    else:
+        current_client = client
+        current_deployment = DEPLOYMENT
+    
+    qid = question_data["id"]
+    qtype = question_data["type"]
+    user_input = question_data["markdown"]
+
+    logging.info(f"[LLM REQUEST] Q{qid} | type={qtype} | model={current_deployment} | input_len={len(user_input)}")
+    logging.info(f"[LLM REQUEST] Q{qid} | input_preview: {user_input[:200]}")
+
     try:
-        response = client.chat.completions.create(
-            model=DEPLOYMENT,
+        response = current_client.chat.completions.create(
+            model=current_deployment,
             response_format={ "type": "json_object" },
             temperature=0.1,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": question_data["markdown"]}
+                {"role": "user", "content": user_input}
             ]
         )
         raw = response.choices[0].message.content
         feedback = json.loads(raw)
         n_comments = len(feedback.get('feedback_comments', []))
+
+        logging.info(f"[LLM RESPONSE] Q{qid} | status=OK | comments={n_comments} | raw_len={len(raw)}")
+        logging.info(f"[LLM RESPONSE] Q{qid} | raw_output: {raw[:500]}")
+
         import progress
         progress.current_status.setdefault("debug_log", []).append({
-            "q": question_data["id"],
-            "type": question_data["type"],
-            "preview": question_data["markdown"][:120],
+            "q": qid,
+            "type": qtype,
+            "preview": user_input[:120],
             "comments": n_comments,
             "scratchpad": feedback.get("_scratchpad", {}),
             "raw_preview": raw[:500]
         })
-        return {"id": question_data["id"], "success": True, "feedback": feedback}
+        return {"id": qid, "success": True, "feedback": feedback}
     except Exception as e:
+        logging.error(f"[LLM ERROR] Q{qid} | model={current_deployment} | error={type(e).__name__}: {e}")
+        logging.error(f"[LLM ERROR] Q{qid} | input_preview: {user_input[:300]}")
+
         import progress
         progress.current_status.setdefault("debug_log", []).append({
-            "q": question_data["id"],
-            "type": question_data["type"],
-            "preview": question_data["markdown"][:120],
+            "q": qid,
+            "type": qtype,
+            "preview": user_input[:120],
             "error": f"{type(e).__name__}: {e}"
         })
-        return {"id": question_data["id"], "success": False, "error": str(e)}
+        return {"id": qid, "success": False, "error": str(e)}
 
 
-def process_exam_in_parallel(exam_questions):
+def process_exam_in_parallel(exam_questions, model_version="base"):
     """
     Takes a list of question dictionaries and processes them concurrently.
     Populates progress.current_status with per-question status for frontend viz.
+    model_version: "base", "v1", or "v2"
     """
     import progress
     import threading
@@ -157,7 +196,7 @@ def process_exam_in_parallel(exam_questions):
         if idx >= 0:
             progress.current_status["questions"][idx]["status"] = "active"
 
-        result = process_single_question(question_data)
+        result = process_single_question(question_data, model_version=model_version)
 
         with lock:
             completed += 1
@@ -170,7 +209,6 @@ def process_exam_in_parallel(exam_questions):
             progress.current_status["progress"]        = 30 + int((completed / max(total, 1)) * 55)
 
         return result
-
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures = {executor.submit(run_with_tracking, q): q for q in exam_questions}
         for future in concurrent.futures.as_completed(futures):

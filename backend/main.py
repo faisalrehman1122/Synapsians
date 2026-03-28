@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Request, Form
+from fastapi import FastAPI, UploadFile, File, Request, Form, Query
 from fastapi.responses import Response, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from document_processor import process_exam_document
@@ -30,10 +30,11 @@ def get_status():
     return progress.current_status
 
 @app.post("/evaluate")
-async def evaluate_exam(file: UploadFile = File(...), model: str = Form("finetuned")):
-    import llm_engine
-    llm_engine.set_model_choice(model)
-    
+async def evaluate_exam(
+    file: UploadFile = File(...),
+    FINETUNED_MODEL: bool = Query(False, description="Use fine-tuned model v1"),
+    FINETUNED_MODEL2: bool = Query(False, description="Use fine-tuned model v2")
+):
     # Reset all state for this new run
     progress.reset()
     progress.current_status["message"]  = "Uploading & initialising…"
@@ -43,20 +44,26 @@ async def evaluate_exam(file: UploadFile = File(...), model: str = Form("finetun
     if not file.filename.endswith(".docx"):
         return {"error": "Invalid file format. Only .docx files are supported."}
 
+    # Determine which model to use (v2 takes priority if both are set)
+    if FINETUNED_MODEL2:
+        model_version = "v2"
+    elif FINETUNED_MODEL:
+        model_version = "v1"
+    else:
+        model_version = "base"
+
     file_bytes = await file.read()
 
-    progress.current_status["message"]  = "Analysing document structure…"
+    progress.current_status["message"]  = f"Analysing document structure (Model: {model_version})…"
     progress.current_status["progress"] = 10
     progress.current_status["phase"]    = "parsing"
 
     try:
-        modified_docx_bytes = await process_exam_document(file_bytes)
+        modified_docx_bytes = await process_exam_document(file_bytes, model_version=model_version)
     except Exception as e:
-        import traceback
         traceback.print_exc()
         progress.current_status["message"]  = f"Error: {e}"
         progress.current_status["phase"]    = "idle"
-        from fastapi.responses import JSONResponse
         return JSONResponse(
             status_code=500,
             content={"error": f"Backend processing failed: {str(e)}"}
