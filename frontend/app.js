@@ -332,15 +332,24 @@
 // ── App logic ──────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
 
+    const MODEL_CYCLE = ['base', 'finetuned_v1', 'finetuned_v2'];
+    const MODEL_LABELS = {
+        'base':          'Base Model (gpt-4o)',
+        'finetuned_v1':  'Finetuned Model v1 (gpt-4o-exam-linter-v1)',
+        'finetuned_v2':  'Finetuned Model v2 (gpt-4o-exam-linter-v2)',
+    };
+
     const urlParams = new URLSearchParams(window.location.search);
-    window._selectedModel = urlParams.get('model') === 'base' ? 'base' : 'finetuned_v2';
+    const initModel = urlParams.get('model');
+    window._selectedModel = MODEL_LABELS[initModel] ? initModel : 'finetuned_v2';
 
     window.addEventListener('keydown', (e) => {
         if (e.key === 'Tab') {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
             e.preventDefault();
             
-            window._selectedModel = window._selectedModel === 'finetuned_v2' ? 'base' : 'finetuned_v2';
+            const curIdx = MODEL_CYCLE.indexOf(window._selectedModel);
+            window._selectedModel = MODEL_CYCLE[(curIdx + 1) % MODEL_CYCLE.length];
             
             const url = new URL(window.location);
             url.searchParams.set('model', window._selectedModel);
@@ -348,7 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const indicator = document.getElementById('model-indicator');
             if (indicator) {
-                indicator.textContent = window._selectedModel === 'finetuned_v2' ? 'Finetuned Model v2 (gpt-4o-exam-linter-v2)' : 'Base Model (gpt-4o)';
+                indicator.textContent = MODEL_LABELS[window._selectedModel];
                 indicator.classList.add('show');
                 clearTimeout(window._modelIndicatorTimeout);
                 window._modelIndicatorTimeout = setTimeout(() => {
@@ -549,12 +558,14 @@ document.addEventListener('DOMContentLoaded', () => {
             // then start polling after a short delay.
             const fd = new FormData();
             fd.append('file', file);
+            const useV1 = window._selectedModel === 'finetuned_v1';
             const useV2 = window._selectedModel === 'finetuned_v2';
-            const evalUrl = `http://127.0.0.1:8000/evaluate?FINETUNED_MODEL2=${useV2}`;
+            const evalUrl = `http://127.0.0.1:8000/evaluate?FINETUNED_MODEL=${useV1}&FINETUNED_MODEL2=${useV2}`;
 
             console.group('🚀 [LLM] Evaluate Request');
             console.log('Model selected:', window._selectedModel);
-            console.log('FINETUNED_MODEL2:', useV2);
+            console.log('FINETUNED_MODEL (v1):', useV1);
+            console.log('FINETUNED_MODEL2 (v2):', useV2);
             console.log('URL:', evalUrl);
             console.log('File:', file.name, `(${(file.size / 1024).toFixed(1)} KB)`);
             console.groupEnd();
